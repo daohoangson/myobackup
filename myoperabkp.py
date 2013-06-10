@@ -22,17 +22,42 @@ import os
 import errno
 from string import Template
 import fnmatch
+import re
 
 # variables
 myopath = "http://my.opera.com/%s/archive/"
 
-def getcontent(uri):
+
+def getcontentbinary(uri):
     """Given a uri, parse an html document"""
     headers = {'User-Agent': "MyOpera-Backup/1.0"}
-    r = requests.get(uri, headers=headers)
-    responsetext = r.text
-    logging.info("parsed %s" % (uri))
-    return responsetext
+
+    cachepath = "cache/%s" % (re.sub(r"[^a-zA-Z0-9\/\-\_\.]", "", uri))
+    if (cachepath[-1] == "/"):
+        cachepath += "index.html"
+
+    if (os.path.exists(cachepath)):
+        with open(cachepath, "rb") as cachefile:
+            responsedata = cachefile.read()
+        logging.info("read cache %s for %s" % (cachepath, uri))
+    else:
+        try:
+            r = requests.get(uri, headers=headers)
+            responsedata = r.content
+
+            mkdir(os.path.dirname(cachepath))
+            with open(cachepath, "wb") as cachefile:
+                cachefile.write(responsedata)
+            logging.info("request %s (saved to %s)" % (uri, cachepath))
+        except requests.exceptions.ConnectionError as exc:
+            responsedata = b""
+            logging.error("give up %s (%s)" % (uri, exc))
+
+    return responsedata
+
+
+def getcontent(uri):
+    return getcontentbinary(uri);
 
 
 def getpostcontent(uri):
@@ -87,9 +112,7 @@ def pathdate(datetext):
 def archiveimage(imguri, localpostpath):
     "save the image locally"
     # read image data
-    imageresp = urllib2.urlopen(imguri)
-    imagedata = imageresp.read()
-    imageresp.close()
+    imagedata = getcontentbinary(imguri)
     # take the last part of the path after "/"
     imagename = string.rsplit(imguri, "/", 1)[-1:][0]
     # take the last part of the string after "."
