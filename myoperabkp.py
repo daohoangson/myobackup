@@ -23,6 +23,7 @@ import errno
 from string import Template
 import fnmatch
 import re
+import HTMLParser
 
 # variables
 myopath = "http://my.opera.com/%s/archive/"
@@ -57,7 +58,7 @@ def getcontentbinary(uri):
 
 
 def getcontent(uri):
-    return getcontentbinary(uri);
+    return getcontentbinary(uri)
 
 
 def getpostcontent(uri):
@@ -82,13 +83,40 @@ def getpostcontent(uri):
     content = tree.xpath('//div[@id="firstpost"]//div[@class="content"]')
     imageslist = tree.xpath('//div[@id="firstpost"]//div[@class="content"]//img/@src')
     taglist = tree.xpath('//div[@id="firstpost"]//a[@rel="tag"]/text()')
+
+    commentDivs = tree.xpath('//div[@class="comments"]/div')
+    comments = []
+    for commentDiv in commentDivs:
+        commentDiv = etree.HTML(etree.tostring(commentDiv), parser=myparser)
+
+        commentText = commentDiv.xpath('//div[@class="text"]/text()')
+        if len(commentText) < 1:
+            continue
+
+        parsedId = '' # commentDiv.get('id')
+
+        parsedDate = commentDiv.xpath('//span[@class="comment-date"]/text()')
+        if len(parsedDate) < 1:
+            continue
+
+        match = re.search("^([^:]+) writes:([^$]+)", commentText[0])
+        if match:
+            parsedAuthor = match.group(1)
+            parsedContent = match.group(2).strip()
+            comments.append(dict([
+                ("id", parsedId),
+                ("date", parsedDate[0].strip()),
+                ("author", parsedAuthor),
+                ("content", parsedContent)]))
+
     return dict([
         ("uri", uri),
         ("title", title),
         ("date", postdate),
         ("html", etree.tostring(content[0])),
         ("imglist", imageslist),
-        ("taglist", taglist)])
+        ("taglist", taglist),
+        ("comments", comments)])
 
 
 def mkdir(path):
@@ -196,11 +224,13 @@ def blogpostlist(useruri):
 
 def createwxritem(blogpost, WP, CONTENT):
     "Create an lxml element (item) for each item post for WXR"
+
+    hp = HTMLParser.HTMLParser()
     item = etree.Element('item')
     etree.SubElement(item, 'title').text = blogpost['title'][0]
     etree.SubElement(item, WP + 'status').text = 'publish'
     etree.SubElement(item, WP + 'post_type').text = 'post'
-    etree.SubElement(item, CONTENT + "encoded").text = etree.CDATA(blogpost['html'])
+    etree.SubElement(item, CONTENT + "encoded").text = etree.CDATA(hp.unescape(blogpost['html']))
     # MyOpera date format is "Monday, December 10, 2012 6:35:49 AM"
     # pubDate format is "Thu, 24 Sep 2012 01:40:01 +0000"
     datestruct = time.strptime(blogpost['date'][0], '%A, %B %d, %Y %I:%M:%S %p')
@@ -215,6 +245,22 @@ def createwxritem(blogpost, WP, CONTENT):
         tag_element.text = etree.CDATA(tag)
         tag_element.set('domain', 'post_tag')
         tag_element.set('nicename', tag)
+
+    for comment in blogpost['comments']:
+        commentDateStruct = time.strptime(comment['date'], '%A, %B %d, %Y %I:%M:%S %p')
+        commentDate = time.strftime("%Y-%m-%d %T", commentDateStruct)
+
+        commentId = comment['id']
+        if len(commentId) == 0:
+            commentId = '%d' % (time.mktime(commentDateStruct))
+
+        comment_element = etree.SubElement(item, WP + "comment")
+        etree.SubElement(comment_element, WP + "comment_id").text = etree.CDATA(commentId)
+        etree.SubElement(comment_element, WP + "comment_date").text = etree.CDATA(commentDate)
+        etree.SubElement(comment_element, WP + "comment_date_gmt").text = etree.CDATA(commentDate)
+        etree.SubElement(comment_element, WP + "comment_author").text = etree.CDATA(comment['author'])
+        etree.SubElement(comment_element, WP + "comment_content").text = etree.CDATA(comment['content'])
+
     return item
 
 
