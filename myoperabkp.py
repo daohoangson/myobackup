@@ -37,7 +37,7 @@ def getcontentbinary(uri):
     if (cachepath[-1] == "/"):
         cachepath += "index.html"
 
-    if (os.path.exists(cachepath)):
+    if (os.path.exists(cachepath) and os.path.getsize(cachepath) > 0):
         with open(cachepath, "rb") as cachefile:
             responsedata = cachefile.read()
         logging.info("read cache %s for %s" % (cachepath, uri))
@@ -260,6 +260,7 @@ def createwxritem(blogpost, WP, CONTENT):
         etree.SubElement(comment_element, WP + "comment_date_gmt").text = etree.CDATA(commentDate)
         etree.SubElement(comment_element, WP + "comment_author").text = etree.CDATA(comment['author'])
         etree.SubElement(comment_element, WP + "comment_content").text = etree.CDATA(comment['content'])
+        etree.SubElement(comment_element, WP + "comment_approved").text = etree.CDATA(str(1))
 
     return item
 
